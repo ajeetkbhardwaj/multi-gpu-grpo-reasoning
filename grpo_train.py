@@ -96,6 +96,9 @@ def main():
         print("   accelerate launch --multi_gpu --num_processes 2 grpo_train.py")
         print("   (Or simply execute the ./run_all.sh script)\n")
         
+    # NATIVE FAILSAFE: Force PyTorch to default to float16 to prevent ANY bfloat16 leakage on T4 GPUs
+    torch.set_default_dtype(torch.float16)
+
     # Get local rank for DDP device mapping (avoids Accelerator conflict with Trainer)
     local_rank = int(os.environ.get("LOCAL_RANK", 0))
     
@@ -181,20 +184,6 @@ def main():
     # Wrap model with LoRA
     model = get_peft_model(model, peft_config)
     
-    # NUCLEAR FAILSAFE: Destroy any residual bfloat16 buffers hidden in the model architecture
-    for buffer in model.buffers():
-        if buffer.dtype == torch.bfloat16:
-            buffer.data = buffer.data.to(torch.float16)
-            
-    # NUCLEAR FAILSAFE 2: Convert ALL frozen parameters from bfloat16 to float16 (e.g. lm_head, embeddings)
-    for param in model.parameters():
-        if param.dtype == torch.bfloat16:
-            param.data = param.data.to(torch.float16)
-            
-    # Force all trainable parameters to float32 to prevent BFloat16 GradScaler crashes on T4 GPUs
-    for param in model.parameters():
-        if param.requires_grad and param.dtype != torch.float32:
-            param.data = param.data.to(torch.float32)
 
     # Load prepared math dataset
     grpo_cached_path = os.path.join(cfg.data.cache_dir, "grpo_cached")
