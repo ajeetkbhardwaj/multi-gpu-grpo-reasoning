@@ -56,8 +56,12 @@ def main():
         cfg.model.base,
         quantization_config=bnb_config,
         device_map="auto",
+        torch_dtype=torch.float16,
         cache_dir=cache_dir
     )
+    
+    # Force config to fp16 to ensure hardware-accelerated generation on T4 GPUs
+    base_model.config.torch_dtype = torch.float16
     
     # Load PEFT model
     model = PeftModel.from_pretrained(base_model, grpo_adapter_path)

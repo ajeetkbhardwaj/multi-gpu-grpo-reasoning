@@ -150,6 +150,10 @@ def main():
         cache_dir=cache_dir
     )
     
+    # CRITICAL FIX: Qwen natively uses bfloat16. We MUST override its config to float16 
+    # so TRL/Accelerate don't silently switch to bfloat16 autocast and crash the T4 GPU.
+    model.config.torch_dtype = torch.float16
+
     # Prepare model for k-bit training and configure gradient checkpointing
     model = prepare_model_for_kbit_training(
         model, 
