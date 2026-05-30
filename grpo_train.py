@@ -84,6 +84,13 @@ def format_reward_func(prompts, completions, **kwargs):
     return rewards
 
 def main():
+    # ⚠️ Safeguard to warn users if they run the script directly instead of via accelerate
+    if torch.cuda.device_count() > 1 and "LOCAL_RANK" not in os.environ:
+        print("\n⚠️ WARNING: Multiple GPUs detected but DDP is not initialized!")
+        print("💡 To utilize all GPUs, you MUST launch this script using accelerate:")
+        print("   accelerate launch --multi_gpu --num_processes 2 grpo_train.py")
+        print("   (Or simply execute the ./run_all.sh script)\n")
+        
     # Get local rank for DDP device mapping (avoids Accelerator conflict with Trainer)
     local_rank = int(os.environ.get("LOCAL_RANK", 0))
     
@@ -144,8 +151,11 @@ def main():
     )
     
     # Prepare model for k-bit training and configure gradient checkpointing
-    model = prepare_model_for_kbit_training(model)
-    model.gradient_checkpointing_enable()
+    model = prepare_model_for_kbit_training(
+        model, 
+        use_gradient_checkpointing=True, 
+        gradient_checkpointing_kwargs={"use_reentrant": False}
+    )
 
     # Define LoRA Configuration
     peft_config = LoraConfig(
@@ -185,6 +195,7 @@ def main():
         fp16=cfg.hardware.fp16,
         bf16=cfg.hardware.bf16,
         gradient_checkpointing=True,
+        gradient_checkpointing_kwargs={"use_reentrant": False},
         logging_steps=cfg.training.grpo.logging_steps,
         save_steps=cfg.training.grpo.save_steps,
         save_total_limit=2,
