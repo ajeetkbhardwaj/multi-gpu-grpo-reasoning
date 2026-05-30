@@ -186,6 +186,11 @@ def main():
         if buffer.dtype == torch.bfloat16:
             buffer.data = buffer.data.to(torch.float16)
             
+    # NUCLEAR FAILSAFE 2: Convert ALL frozen parameters from bfloat16 to float16 (e.g. lm_head, embeddings)
+    for param in model.parameters():
+        if param.dtype == torch.bfloat16:
+            param.data = param.data.to(torch.float16)
+            
     # Force all trainable parameters to float32 to prevent BFloat16 GradScaler crashes on T4 GPUs
     for param in model.parameters():
         if param.requires_grad and param.dtype != torch.float32:
