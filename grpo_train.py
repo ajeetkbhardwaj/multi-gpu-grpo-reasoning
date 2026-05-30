@@ -169,6 +169,11 @@ def main():
     
     # Wrap model with LoRA
     model = get_peft_model(model, peft_config)
+    
+    # Force all trainable parameters to float32 to prevent BFloat16 GradScaler crashes on T4 GPUs
+    for param in model.parameters():
+        if param.requires_grad and param.dtype != torch.float32:
+            param.data = param.data.to(torch.float32)
 
     # Load prepared math dataset
     grpo_cached_path = os.path.join(cfg.data.cache_dir, "grpo_cached")
@@ -190,7 +195,7 @@ def main():
         learning_rate=cfg.training.grpo.lr,
         num_train_epochs=cfg.training.grpo.epochs,
         num_generations=cfg.training.grpo.num_generations,
-        warmup_ratio=cfg.training.grpo.warmup_ratio,
+        warmup_steps=cfg.training.grpo.warmup_steps,
         lr_scheduler_type="cosine",
         fp16=cfg.hardware.fp16,
         bf16=cfg.hardware.bf16,

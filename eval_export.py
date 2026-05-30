@@ -86,9 +86,9 @@ def main():
                 pad_token_id=tokenizer.pad_token_id
             )
             
-        generated_text = tokenizer.decode(outputs[0], skip_special_tokens=True)
-        # Extract response from prompt end
-        response = generated_text[len(prompt) - len(tokenizer.decode(inputs.input_ids[0], skip_special_tokens=True)):]
+        # Safely extract only the newly generated tokens using tensor slicing
+        generated_ids = outputs[0][inputs.input_ids.shape[1]:]
+        response = tokenizer.decode(generated_ids, skip_special_tokens=True)
         print(f"\n📝 Question {i+1}: {q}")
         print(f"🤖 Model response:\n{response}")
         print("-" * 50)

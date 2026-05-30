@@ -36,6 +36,7 @@ if [ "$NUM_GPUS" -gt 1 ]; then
         "--multi_gpu"
         "--num_machines" "1"
         "--num_processes" "$NUM_GPUS"
+        "--mixed_precision" "fp16"
     )
     accelerate launch "${accelerator_args[@]}" grpo_train.py
 else
