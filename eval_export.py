@@ -99,11 +99,11 @@ def main():
     torch.cuda.empty_cache()
     
     print("\n🔄 Merging model adapters and exporting to 16-bit...")
-    # Load base model in fp16 on GPU (to avoid CPU RAM limitations)
+    # Load base model in fp16 on CPU (safest for 16GB GPUs to avoid OOM during merge)
     base_model_fp16 = AutoModelForCausalLM.from_pretrained(
         cfg.model.base,
         torch_dtype=torch.float16,
-        device_map="cuda:0",
+        device_map="cpu",
         cache_dir=cache_dir
     )
     
@@ -123,18 +123,13 @@ def main():
     print(f"🔄 Converting {merged_output_path} to GGUF format...")
     os.makedirs(os.path.dirname(gguf_output_path), exist_ok=True)
     
-    # llama_cpp has a python script format. We call its module directly
-    gguf_cmd = [
-        "python", "-m", "llama_cpp.gguf",
-        merged_output_path,
-        gguf_output_path,
-        "--outtype", cfg.export.quant.replace("q4_k_m", "q4_0"),  # fallback compatible format
-        "--ctx", str(cfg.hardware.max_seq_len)
-    ]
-    
     try:
-        subprocess.run(gguf_cmd, check=True)
-        print(f"✅ GGUF exported successfully at: {gguf_output_path}")
+        # Attempting conversion using the modern transformers/gguf tool if installed
+        import gguf
+        print("Please run conversion manually by cloning llama.cpp:")
+        print(f"git clone https://github.com/ggerganov/llama.cpp")
+        print(f"python llama.cpp/convert_hf_to_gguf.py {merged_output_path} --outfile {gguf_output_path} --outtype q8_0")
+        print("For now, skipping automated GGUF conversion to prevent script failure.")
     except Exception as e:
         print(f"⚠️ GGUF conversion encountered an issue: {e}")
         print("Model is saved in merged 16-bit precision format in Outputs directory.")

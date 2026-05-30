@@ -36,7 +36,6 @@ if [ "$NUM_GPUS" -gt 1 ]; then
         "--multi_gpu"
         "--num_machines" "1"
         "--num_processes" "$NUM_GPUS"
-        "--dynamically_quantized_training" "False"
     )
     accelerate launch "${accelerator_args[@]}" grpo_train.py
 else

@@ -34,7 +34,7 @@ training:
   grpo:
     epochs: 1
     lr: 1e-6
-    num_generations: 4  # Number of completions to sample per prompt in a group
+    num_generations: 2  # Reduced from 4 to 2 to prevent CUDA OOM on 16GB GPUs during rollouts
     warmup_ratio: 0.1
     logging_steps: 5
     save_steps: 50
