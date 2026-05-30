@@ -4,7 +4,7 @@ import gc
 import re
 import torch
 import datasets
-from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
+from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig, AutoConfig
 from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
 from trl import GRPOTrainer, GRPOConfig
 from omegaconf import OmegaConf
@@ -57,6 +57,11 @@ def correctness_reward_func(prompts, completions, answer, **kwargs):
         gt_val = extract_gt_answer(gt)
         model_val = extract_boxed_answer(completion)
         
+        # 💡 DEBUG LOGGING: Print active generations so the console doesn't look frozen!
+        if os.environ.get("LOCAL_RANK", "0") == "0":
+            preview = completion.replace('\n', ' ')
+            print(f"\n[GPU 0 Active Rollout] 🤖 {preview[:120]}... \n[Target: {gt_val} | Extracted: {model_val}]")
+            
         if gt_val and model_val == gt_val:
             rewards.append(1.0)
         else:
@@ -141,18 +146,20 @@ def main():
     if local_rank == 0:
         print(f"Loading base model {cfg.model.base} in 4-bit on GPU {local_rank}...")
         
+    # PRE-LOAD CONFIG: Qwen natively uses bfloat16. We MUST override it before instantiation
+    # so internal components like RoPE embeddings don't initialize as bfloat16 and poison gradients.
+    model_config = AutoConfig.from_pretrained(cfg.model.base, cache_dir=cache_dir)
+    model_config.torch_dtype = torch.float16
+
     # Load model with correct device mapping to prevent cross-GPU bloat in DDP
     model = AutoModelForCausalLM.from_pretrained(
         cfg.model.base,
+        config=model_config,
         quantization_config=bnb_config,
         device_map={"": local_rank},
         torch_dtype=torch.float16,
         cache_dir=cache_dir
     )
-    
-    # CRITICAL FIX: Qwen natively uses bfloat16. We MUST override its config to float16 
-    # so TRL/Accelerate don't silently switch to bfloat16 autocast and crash the T4 GPU.
-    model.config.torch_dtype = torch.float16
 
     # Prepare model for k-bit training and configure gradient checkpointing
     model = prepare_model_for_kbit_training(
@@ -174,6 +181,11 @@ def main():
     # Wrap model with LoRA
     model = get_peft_model(model, peft_config)
     
+    # NUCLEAR FAILSAFE: Destroy any residual bfloat16 buffers hidden in the model architecture
+    for buffer in model.buffers():
+        if buffer.dtype == torch.bfloat16:
+            buffer.data = buffer.data.to(torch.float16)
+            
     # Force all trainable parameters to float32 to prevent BFloat16 GradScaler crashes on T4 GPUs
     for param in model.parameters():
         if param.requires_grad and param.dtype != torch.float32:
