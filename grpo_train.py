@@ -4,7 +4,6 @@ import gc
 import re
 import torch
 import datasets
-from accelerate import Accelerator
 from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
 from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
 from trl import GRPOTrainer, GRPOConfig
@@ -85,9 +84,8 @@ def format_reward_func(prompts, completions, **kwargs):
     return rewards
 
 def main():
-    # Initialize Accelerator for DDP
-    accelerator = Accelerator()
-    local_rank = accelerator.local_process_index
+    # Get local rank for DDP device mapping (avoids Accelerator conflict with Trainer)
+    local_rank = int(os.environ.get("LOCAL_RANK", 0))
     
     # Load configuration
     config_path = os.path.join(os.path.dirname(__file__), "config.yaml")
@@ -112,19 +110,10 @@ def main():
         
     cache_dir = os.environ.get("CACHE_DIR", "/tmp/transformers_cache")
     
-    # Initialize W&B logging if key is present
-    report_to = "none"
-    if os.environ.get("WANDB_API_KEY") and local_rank == 0:
-        try:
-            import wandb
-            wandb.init(
-                project=cfg.paths.wandb_project,
-                name="multi_gpu_grpo_7b",
-                config=OmegaConf.to_container(cfg)
-            )
-            report_to = "wandb"
-        except ImportError:
-            print("wandb not installed. Skipping W&B.")
+    # Let Hugging Face Trainer handle W&B automatically across DDP
+    report_to = "wandb" if os.environ.get("WANDB_API_KEY") else "none"
+    if report_to == "wandb":
+        os.environ["WANDB_PROJECT"] = cfg.paths.wandb_project
 
     # BitsAndBytesConfig for 4-bit QLoRA
     bnb_config = BitsAndBytesConfig(
@@ -191,10 +180,6 @@ def main():
         learning_rate=cfg.training.grpo.lr,
         num_train_epochs=cfg.training.grpo.epochs,
         num_generations=cfg.training.grpo.num_generations,
-        # Restrict context lengths to fit within 16GB VRAM bounds per GPU
-        max_prompt_length=cfg.hardware.max_seq_len // 4,
-        max_completion_length=cfg.hardware.max_seq_len * 3 // 4,
-        max_length=cfg.hardware.max_seq_len,
         warmup_ratio=cfg.training.grpo.warmup_ratio,
         lr_scheduler_type="cosine",
         fp16=cfg.hardware.fp16,
@@ -205,8 +190,7 @@ def main():
         save_total_limit=2,
         report_to=report_to,
         ddp_find_unused_parameters=False,  # Essential optimization flag for DDP
-        logging_first_step=True,
-        temperature=cfg.training.grpo.temp
+        logging_first_step=True
     )
 
     if local_rank == 0:
@@ -236,9 +220,6 @@ def main():
     gc.collect()
     torch.cuda.empty_cache()
     
-    if report_to == "wandb" and local_rank == 0:
-        wandb.finish()
-        
     if local_rank == 0:
         print("✅ Multi-GPU GRPO math alignment completed successfully!")
 
