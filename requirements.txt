@@ -1,0 +1,10 @@
+transformers
+trl
+peft
+bitsandbytes
+datasets
+accelerate
+omegaconf
+wandb
+jinja2
+torch

@@ -1,0 +1,45 @@
+# Configuration file for SOTA Multi-GPU GRPO Reasoning Project
+# Specifically designed for Kaggle T4x2 / Colab multi-GPU setups.
+
+hardware:
+  max_seq_len: 1024
+  batch_size: 1
+  grad_accum: 8  # Effective batch size is batch_size * grad_accum * num_gpus (e.g. 1 * 8 * 2 = 16)
+  optim: "paged_adamw_8bit"
+  fp16: true
+  bf16: false  # T4 GPUs do not support bf16 efficiently; stick to fp16
+
+model:
+  base: "Qwen/Qwen2.5-Math-7B"
+  lora:
+    r: 16
+    lora_alpha: 32
+    target_modules: ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
+    bias: "none"
+    task_type: "CAUSAL_LM"
+    dropout: 0.05
+
+data:
+  dataset: "AI-MO/NuminaMath-CoT"  # SOTA Olympiad Math CoT dataset
+  subset: ""                       # NuminaMath-CoT does not use a subset name
+  split: "train"
+  max_examples: 1000  # Streaming helps process this efficiently without memory bloat
+  cache_dir: "/tmp/grpo-reasoning-data"
+
+paths:
+  output: "./outputs"
+  wandb_project: "multi-gpu-grpo-reasoning"
+
+training:
+  grpo:
+    epochs: 1
+    lr: 1e-6
+    num_generations: 4  # Number of completions to sample per prompt in a group
+    warmup_ratio: 0.1
+    logging_steps: 5
+    save_steps: 50
+    temp: 0.9  # Temperature for generation
+
+export:
+  gguf_name: "math_reasoning_qwen2.5_7b.gguf"
+  quant: "q4_k_m"
